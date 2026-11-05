@@ -1,0 +1,70 @@
+#!/bin/sh
+#
+# @name Gazebo PennAiR 5-inch quad
+#
+# @type Quadrotor
+#
+# @maintainer Penn Aerial Robotics
+#
+# Gazebo model: monorepo gz-models/models/pennair_quad_5in/model.sdf.
+# Keep in sync with the SDF:
+#   CA_ROTORn_PX/PY  <-> rotor_n x/y (PY = -SDF y, PX4 is FRD, SDF is FLU)
+#   CA_ROTORn_KM     <-> turningDirection (ccw = +, cw = -)
+#   SIM_GZ_EC_MAXn   <-> maxRotVelocity (2900 rad/s)
+#   MPC_THR_HOVER    <-> motorConstant and total mass
+#
+
+. ${R}etc/init.d/rc.mc_defaults
+
+PX4_SIMULATOR=${PX4_SIMULATOR:=gz}
+PX4_GZ_WORLD=${PX4_GZ_WORLD:=default}
+PX4_SIM_MODEL=${PX4_SIM_MODEL:=pennair_quad_5in}
+
+param set-default SIM_GZ_EN 1
+
+param set-default CA_AIRFRAME 0
+param set-default CA_ROTOR_COUNT 4
+
+# Motor positions measured from the Onshape body STL: +-0.061 m on each axis
+# rotor 0: front-right, ccw
+param set-default CA_ROTOR0_PX 0.061
+param set-default CA_ROTOR0_PY 0.061
+param set-default CA_ROTOR0_KM 0.05
+
+# rotor 1: back-left, ccw
+param set-default CA_ROTOR1_PX -0.061
+param set-default CA_ROTOR1_PY -0.061
+param set-default CA_ROTOR1_KM 0.05
+
+# rotor 2: front-left, cw
+param set-default CA_ROTOR2_PX 0.061
+param set-default CA_ROTOR2_PY -0.061
+param set-default CA_ROTOR2_KM -0.05
+
+# rotor 3: back-right, cw
+param set-default CA_ROTOR3_PX -0.061
+param set-default CA_ROTOR3_PY 0.061
+param set-default CA_ROTOR3_KM -0.05
+
+param set-default SIM_GZ_EC_FUNC1 101
+param set-default SIM_GZ_EC_FUNC2 102
+param set-default SIM_GZ_EC_FUNC3 103
+param set-default SIM_GZ_EC_FUNC4 104
+
+# Linear command -> rotor speed, so thrust is quadratic in the command (THR_MDL_FAC 1)
+param set-default SIM_GZ_EC_MIN1 0
+param set-default SIM_GZ_EC_MIN2 0
+param set-default SIM_GZ_EC_MIN3 0
+param set-default SIM_GZ_EC_MIN4 0
+
+param set-default SIM_GZ_EC_MAX1 2900
+param set-default SIM_GZ_EC_MAX2 2900
+param set-default SIM_GZ_EC_MAX3 2900
+param set-default SIM_GZ_EC_MAX4 2900
+
+param set-default THR_MDL_FAC 1.0
+
+# [EST] hover thrust / max thrust = 1.11 N / 5.05 N per motor. Correct from the ulog hover throttle.
+param set-default MPC_THR_HOVER 0.22
+
+param set-default NAV_DLL_ACT 2
