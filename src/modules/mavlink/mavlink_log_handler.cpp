@@ -36,6 +36,49 @@
 #include <dirent.h>
 #include <sys/stat.h>
 
+#if defined(KAKUTEH7MINI_FLASH_LOG_TIMESTAMPS)
+#include <time.h>
+
+// Only standard UTC log paths are supported; session paths remain undated.
+static time_t timestamp_from_log_path(const char *dir, const char *filename)
+{
+	const char *date = strrchr(dir, '/');
+
+	if (!date || strlen(date + 1) != 10 || strlen(filename) != 12 || strcmp(filename + 8, ".ulg") != 0) {
+		return 0;
+	}
+
+	int year, month, day, hour, minute, second;
+	int date_length = 0;
+	int time_length = 0;
+
+	if (sscanf(date + 1, "%4d-%2d-%2d%n", &year, &month, &day, &date_length) != 3 || date_length != 10
+	    || sscanf(filename, "%2d_%2d_%2d%n", &hour, &minute, &second, &time_length) != 3 || time_length != 8
+	    || year < 2009 || year > 2105 || month < 1 || month > 12 || day < 1 || day > 31
+	    || hour < 0 || hour > 23 || minute < 0 || minute > 59 || second < 0 || second > 59) {
+		return 0;
+	}
+
+	struct tm log_time {};
+	log_time.tm_year = year - 1900;
+	log_time.tm_mon = month - 1;
+	log_time.tm_mday = day;
+	log_time.tm_hour = hour;
+	log_time.tm_min = minute;
+	log_time.tm_sec = second;
+	const time_t timestamp = timegm(&log_time);
+	struct tm checked {};
+
+	// Reject impossible dates that timegm normalizes, such as February 30.
+	if (timestamp <= 0 || !gmtime_r(&timestamp, &checked) || checked.tm_year != year - 1900
+	    || checked.tm_mon != month - 1 || checked.tm_mday != day) {
+		return 0;
+	}
+
+	return timestamp;
+}
+#endif
+
 static constexpr int MAX_BYTES_BURST = 256 * 1024;
 static const char *kLogListFilePath = PX4_STORAGEDIR "/logdata.txt";
 static const char *kLogListFilePathTemp = PX4_STORAGEDIR "/$log$.txt";
@@ -429,6 +472,13 @@ void MavlinkLogHandler::write_entries_to_file(FILE *fp, const char *dir)
 	DIR *dp = opendir(dir);
 	struct dirent *result = nullptr;
 
+#if defined(KAKUTEH7MINI_FLASH_LOG_TIMESTAMPS)
+	int32_t utc_offset_minutes = 0;
+	const param_t utc_offset_param = param_find("SDLOG_UTC_OFFSET");
+	const bool utc_filenames = utc_offset_param != PARAM_INVALID
+				   && param_get(utc_offset_param, &utc_offset_minutes) == 0 && utc_offset_minutes == 0;
+#endif
+
 	while (1) {
 		result = readdir(dp);
 
@@ -457,6 +507,12 @@ void MavlinkLogHandler::write_entries_to_file(FILE *fp, const char *dir)
 			PX4_DEBUG("stat() failed: %s", filepath);
 			continue;
 		}
+
+#if defined(KAKUTEH7MINI_FLASH_LOG_TIMESTAMPS)
+		if (filestat.st_mtime == 0 && utc_filenames) {
+			filestat.st_mtime = timestamp_from_log_path(dir, result->d_name);
+		}
+#endif
 
 		// Write to file using format:
 		// [ time ] [ size_bytes ] [ filepath ]
