@@ -13,6 +13,18 @@ then
 	reboot
 fi
 
+# Mount the existing onboard flash filesystem without automatic formatting.
+if [ -e /dev/kakute_flash ]
+then
+	if mount -t littlefs /dev/kakute_flash /fs/microsd
+	then
+		set STORAGE_AVAILABLE yes
+		echo "INFO [init] onboard flash mounted"
+	else
+		echo "ERROR [init] onboard flash mount failed"
+	fi
+fi
+
 param set-default BAT1_V_DIV 11.2
 param set-default BAT1_A_PER_V 59.5
 
