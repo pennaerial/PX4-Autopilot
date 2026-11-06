@@ -1090,8 +1090,6 @@ FixedWingModeManager::control_auto_takeoff(const hrt_abstime &now, const float c
 			_runway_takeoff.forceSetFlyState();
 		}
 
-		_runway_takeoff.update(now, takeoff_airspeed, _airspeed_eas, _current_altitude - _takeoff_ground_alt,
-				       clearance_altitude_amsl - _takeoff_ground_alt);
 
 		const Vector2f start_pos_local = _global_local_proj_ref.project(_takeoff_init_position(0), _takeoff_init_position(1));
 		const Vector2f takeoff_waypoint_local = _global_local_proj_ref.project(pos_sp_curr.lat, pos_sp_curr.lon);
@@ -1107,6 +1105,9 @@ FixedWingModeManager::control_auto_takeoff(const hrt_abstime &now, const float c
 				takeoff_bearing = atan2f(takeoff_bearing_vector(1), takeoff_bearing_vector(0));
 			}
 		}
+
+		_runway_takeoff.update(now, takeoff_airspeed, _airspeed_eas, _current_altitude - _takeoff_ground_alt,
+				       clearance_altitude_amsl - _takeoff_ground_alt, runway_gps_velocity(), takeoff_bearing);
 
 		const DirectionalGuidanceOutput sp = navigateLine(start_pos_local, takeoff_bearing, local_2D_position, ground_speed,
 						     _wind_vel);
@@ -1286,6 +1287,7 @@ FixedWingModeManager::control_auto_takeoff_no_nav(const hrt_abstime &now, const 
 
 		const float clearance_altitude_amsl = _current_altitude + 20.f; // hard code it to 20m above takeoff point
 
+		// GPS rotation requires valid horizontal navigation. With no navigation, GPS input stays invalid.
 		_runway_takeoff.update(now, takeoff_airspeed, _airspeed_eas, _current_altitude - _takeoff_ground_alt,
 				       clearance_altitude_amsl - _takeoff_ground_alt);
 
@@ -2264,6 +2266,26 @@ FixedWingModeManager::Run()
 
 		perf_end(_loop_perf);
 	}
+}
+
+RunwayTakeoffRotation::GpsVelocity
+FixedWingModeManager::runway_gps_velocity()
+{
+	sensor_gps_s gps{};
+	RunwayTakeoffRotation::GpsVelocity velocity{};
+
+	if (_gps_sub.copy(&gps)) {
+		velocity.timestamp = gps.timestamp_sample > 0 ? gps.timestamp_sample : gps.timestamp;
+		velocity.north = gps.vel_n_m_s;
+		velocity.east = gps.vel_e_m_s;
+		velocity.speed_accuracy = gps.s_variance_m_s;
+		velocity.fix_type = gps.fix_type;
+		velocity.valid = gps.vel_ned_valid && _local_pos.xy_valid && _local_pos.v_xy_valid
+				 && gps.jamming_state < sensor_gps_s::JAMMING_STATE_MITIGATED
+				 && gps.spoofing_state < sensor_gps_s::SPOOFING_STATE_MITIGATED;
+	}
+
+	return velocity;
 }
 
 void

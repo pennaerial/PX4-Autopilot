@@ -126,3 +126,48 @@ PARAM_DEFINE_FLOAT(RWTO_ROT_AIRSPD, -1.0f);
  * @group Runway Takeoff
  */
 PARAM_DEFINE_FLOAT(RWTO_ROT_TIME, 1.0f);
+
+/**
+ * Runway rotation speed source
+ *
+ * GPS mode uses forward ground velocity along the takeoff direction, without wind correction.
+ * Requires RWTO_ROT_GSPD and fresh GPS velocity with a 3D fix and speed accuracy at most 1 m/s.
+ * Invalid GPS inhibits rotation but does not change throttle or abort takeoff.
+ * Rotation settings are read at the start of each takeoff attempt.
+ *
+ * @value 0 Calibrated airspeed
+ * @value 1 GPS groundspeed
+ * @group Runway Takeoff
+ */
+PARAM_DEFINE_INT32(RWTO_ROT_SRC, 0);
+
+/**
+ * Runway rotation groundspeed
+ *
+ * Only used when RWTO_ROT_SRC is 1. Must be positive to permit rotation.
+ * Set from the aircraft rotation speed, density and allowed wind conditions; no wind correction is applied.
+ * Independent of FW_TKO_AIRSPD and RWTO_ROT_AIRSPD.
+ *
+ * @unit m/s
+ * @min -1
+ * @max 100
+ * @decimal 1
+ * @group Runway Takeoff
+ */
+PARAM_DEFINE_FLOAT(RWTO_ROT_GSPD, -1.f);
+
+/**
+ * Runway groundspeed confirmation time
+ *
+ * Time continuously above RWTO_ROT_GSPD after the throttle ramp, measured using new GPS samples.
+ * Invalid data, a sample gap over 0.5 s or speed at or below the threshold restarts confirmation.
+ * Only used when RWTO_ROT_SRC is 1. Set to 0 to accept the first qualifying sample.
+ * Does not change RWTO_ROT_TIME, which controls the subsequent pitch ramp.
+ *
+ * @unit s
+ * @min 0
+ * @max 5
+ * @decimal 2
+ * @group Runway Takeoff
+ */
+PARAM_DEFINE_FLOAT(RWTO_GSPD_TIME, 0.5f);

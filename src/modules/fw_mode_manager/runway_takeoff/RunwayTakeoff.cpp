@@ -57,28 +57,40 @@ void RunwayTakeoff::init(const hrt_abstime &time_now)
 	initialized_ = true;
 	time_initialized_ = time_now;
 	takeoff_time_ = 0;
+	// Freeze the new GPS rotation settings for this takeoff attempt.
+	rotation_source_ = param_rwto_rot_src_.get();
+	rotation_.reset({rotation_source_, param_rwto_rot_airspd_.get(), param_rwto_rot_gspd_.get(),
+			 param_rwto_gspd_time_.get()});
 }
 
 void RunwayTakeoff::update(const hrt_abstime &time_now, const float takeoff_airspeed, const float calibrated_airspeed,
-			   const float vehicle_altitude, const float clearance_altitude)
+			   const float vehicle_altitude, const float clearance_altitude,
+			   const RunwayTakeoffRotation::GpsVelocity &gps, const float runway_bearing)
 {
 	switch (takeoff_state_) {
 	case RunwayTakeoffState::THROTTLE_RAMP:
 		if ((time_now - time_initialized_) > (param_rwto_ramp_time_.get() * 1_s)) {
 			takeoff_state_ = RunwayTakeoffState::CLAMPED_TO_RUNWAY;
+			rotation_.startConfirmation(time_now);
 		}
 
 		break;
 
 	case RunwayTakeoffState::CLAMPED_TO_RUNWAY: {
-			const float rotation_airspeed = (param_rwto_rot_airspd_.get() > FLT_EPSILON) ? math::min(param_rwto_rot_airspd_.get(),
-							takeoff_airspeed) : 0.9f * takeoff_airspeed;
+			rotation_.setAirspeedThreshold(param_rwto_rot_airspd_.get());
 
-			if (calibrated_airspeed > rotation_airspeed) {
+			if (rotation_.update(hrt_absolute_time(), takeoff_airspeed, calibrated_airspeed, gps, runway_bearing)) {
 				takeoff_time_ = time_now;
 				takeoff_state_ = RunwayTakeoffState::CLIMBOUT;
-				events::send(events::ID("runway_takeoff_reached_airspeed"), events::Log::Info,
-					     "Takeoff airspeed reached, climbout");
+
+				if (rotation_source_ == 1) {
+					events::send(events::ID("runway_takeoff_reached_groundspeed"), events::Log::Info,
+						     "Takeoff GPS groundspeed reached, climbout");
+
+				} else {
+					events::send(events::ID("runway_takeoff_reached_airspeed"), events::Log::Info,
+						     "Takeoff airspeed reached, climbout");
+				}
 			}
 
 			break;
@@ -176,6 +188,8 @@ float RunwayTakeoff::getMaxPitch(const float max_pitch) const
 
 void RunwayTakeoff::reset()
 {
+	rotation_.reset({});
+	rotation_source_ = 0;
 	initialized_ = false;
 	takeoff_state_ = RunwayTakeoffState::THROTTLE_RAMP;
 	takeoff_time_ = 0;
