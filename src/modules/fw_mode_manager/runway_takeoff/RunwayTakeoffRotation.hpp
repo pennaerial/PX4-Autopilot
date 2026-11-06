@@ -32,9 +32,9 @@
  ****************************************************************************/
 #pragma once
 
-#include <cfloat>
+#include <float.h>
 #include <cmath>
-#include <cstdint>
+#include <stdint.h>
 
 namespace runwaytakeoff
 {
