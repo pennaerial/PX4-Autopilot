@@ -164,7 +164,7 @@ For a mission this is the bearing from takeoff start to the takeoff waypoint; ot
 Sideways or backwards velocity alone cannot trigger rotation.
 GPS must report a 3D or differential fix (types 3 through 6), valid finite velocity, and finite speed accuracy between 0 and 1 m/s.
 Data must be no more than 0.5 s old and horizontal navigation must be valid.
-Reported jamming or spoofing mitigation/detection inhibits the trigger.
+A reported jamming warning (`JAMMING_STATE_MITIGATED`) does not interrupt speed confirmation while the other GPS checks pass. Detected jamming, unknown higher jamming-state values, and reported spoofing mitigation/detection inhibit the trigger and reset confirmation.
 
 Only new GPS samples advance the confirmation timer.
 Speed at or below the threshold, invalid input, out-of-order data or sample gaps exceeding 0.5 s restart confirmation.

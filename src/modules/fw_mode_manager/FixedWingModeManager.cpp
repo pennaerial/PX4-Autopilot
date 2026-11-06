@@ -2308,7 +2308,7 @@ FixedWingModeManager::runway_gps_velocity()
 		velocity.speed_accuracy = gps.s_variance_m_s;
 		velocity.fix_type = gps.fix_type;
 		velocity.valid = gps.vel_ned_valid && _local_pos.xy_valid && _local_pos.v_xy_valid
-				 && gps.jamming_state < sensor_gps_s::JAMMING_STATE_MITIGATED
+				 && gps.jamming_state <= sensor_gps_s::JAMMING_STATE_MITIGATED
 				 && gps.spoofing_state < sensor_gps_s::SPOOFING_STATE_MITIGATED;
 	}
 
