@@ -408,8 +408,16 @@ FixedWingModeManager::set_control_mode_current(const hrt_abstime &now)
 			} else {
 				_control_mode_current = _local_pos.xy_valid ? FW_POSCTRL_MODE_AUTO_TAKEOFF : FW_POSCTRL_MODE_AUTO_TAKEOFF_NO_NAV;
 
-				if (previous_position_control_mode != FW_POSCTRL_MODE_AUTO_TAKEOFF_NO_NAV
-				    && previous_position_control_mode != FW_POSCTRL_MODE_AUTO_TAKEOFF && !_landed) {
+				// VTOL reports airborne as soon as it is armed in FW mode. Preserve only a
+				// validated, unused ground start; all other airborne entries retain the bypass.
+				const bool ground_runway_start = _control_mode.flag_armed && _vtol_runway_start.consume();
+
+				const bool entering_takeoff = (previous_position_control_mode != FW_POSCTRL_MODE_AUTO_TAKEOFF_NO_NAV
+							       && previous_position_control_mode != FW_POSCTRL_MODE_AUTO_TAKEOFF)
+							      || (_vehicle_status.is_vtol && _runway_takeoff.runwayTakeoffEnabled()
+								  && _control_mode.flag_armed && !_runway_takeoff.isInitialized());
+
+				if (entering_takeoff && !_landed && !ground_runway_start) {
 					// skip takeoff detection when switching from any other mode, auto or manual,
 					// while already in air.
 					// TODO: find a better place for / way of doing this
@@ -1963,6 +1971,9 @@ FixedWingModeManager::Run()
 					   && (_vehicle_status.nav_state <= vehicle_status_s::NAVIGATION_STATE_EXTERNAL8);
 
 	if (is_external_nav_state) {
+		_vtol_runway_start.reset();
+		reset_takeoff_state();
+		_control_mode_current = FW_POSCTRL_MODE_OTHER;
 		// this will cause the configuration handler to publish immediately the next time an internal flight
 		// mode is active
 		_ctrl_configuration_handler.resetLastPublishTime();
@@ -2117,8 +2128,24 @@ FixedWingModeManager::Run()
 
 			if (_vehicle_land_detected_sub.update(&vehicle_land_detected)) {
 				_landed = vehicle_land_detected.landed;
+				_land_detected_timestamp = vehicle_land_detected.timestamp;
 			}
 		}
+
+
+		const VtolRunwayStart::Sample runway_start_sample{
+			_local_pos.timestamp, _local_pos.x, _local_pos.y, _local_pos.z,
+			_local_pos.vx, _local_pos.vy, _local_pos.vz,
+			_local_pos.xy_reset_counter, _local_pos.z_reset_counter,
+			_local_pos.vxy_reset_counter, _local_pos.vz_reset_counter,
+			_local_pos.xy_valid && _local_pos.z_valid && _local_pos.v_xy_valid && _local_pos.v_z_valid
+		};
+		_vtol_runway_start.update(hrt_absolute_time(),
+					 _vehicle_status.is_vtol && _runway_takeoff.runwayTakeoffEnabled(),
+					 _control_mode.flag_armed,
+					 _vehicle_status.vehicle_type == vehicle_status_s::VEHICLE_TYPE_FIXED_WING,
+					 _vehicle_status.in_transition_mode, _control_mode.flag_control_offboard_enabled,
+					 _land_detected_timestamp, _landed, runway_start_sample);
 
 		if (!_vehicle_status.in_transition_mode) {
 			// reset position of backtransition start if not in transition

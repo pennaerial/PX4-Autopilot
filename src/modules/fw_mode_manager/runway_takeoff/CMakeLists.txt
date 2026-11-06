@@ -36,3 +36,5 @@ px4_add_library(runway_takeoff
 )
 
 px4_add_unit_gtest(SRC RunwayTakeoffRotationTest.cpp)
+
+px4_add_unit_gtest(SRC VtolRunwayStartTest.cpp)

@@ -42,6 +42,7 @@
 
 #include "launchdetection/LaunchDetector.h"
 #include "runway_takeoff/RunwayTakeoff.h"
+#include "runway_takeoff/VtolRunwayStart.hpp"
 #include "ControllerConfigurationHandler.hpp"
 
 #include <float.h>
@@ -263,6 +264,8 @@ private:
 	float _reference_altitude{NAN}; // [m AMSL] altitude of the local projection reference point
 
 	bool _landed{true};
+	hrt_abstime _land_detected_timestamp{0};
+	VtolRunwayStart _vtol_runway_start;
 
 	// MANUAL MODES
 
