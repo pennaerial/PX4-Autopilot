@@ -223,7 +223,9 @@ void FwLateralLongitudinalControl::Run()
 						   _long_control_sp.height_rate
 						  );
 
-			pitch_sp = PX4_ISFINITE(_long_control_sp.pitch_direct) ? _long_control_sp.pitch_direct : _tecs.get_pitch_setpoint();
+			// TECS works relative to FW_PSP_OFF; direct pitch is already an aircraft attitude.
+			pitch_sp = PX4_ISFINITE(_long_control_sp.pitch_direct) ? _long_control_sp.pitch_direct :
+				   _tecs.get_pitch_setpoint() + radians(_param_fw_psp_off.get());
 			throttle_sp = PX4_ISFINITE(_long_control_sp.throttle_direct) ? _long_control_sp.throttle_direct :
 				      _tecs.get_throttle_setpoint();
 
@@ -793,6 +795,7 @@ void FwLateralLongitudinalControl::setDefaultLongitudinalControlConfiguration() 
 
 void FwLateralLongitudinalControl::updateLongitudinalControlConfiguration(const longitudinal_control_configuration_s &configuration_in) {
 	_long_configuration.timestamp = configuration_in.timestamp;
+	_long_configuration.disable_underspeed_protection = configuration_in.disable_underspeed_protection;
 
 	if (PX4_ISFINITE(configuration_in.pitch_min)) {
 		_long_configuration.pitch_min = math::constrain(configuration_in.pitch_min, radians(_param_fw_p_lim_min.get()), radians(_param_fw_p_lim_max.get()));

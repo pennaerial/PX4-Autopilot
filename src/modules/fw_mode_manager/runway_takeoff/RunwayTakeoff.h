@@ -49,6 +49,7 @@
 #include <px4_platform_common/module_params.h>
 #include <mathlib/mathlib.h>
 #include <matrix/math.hpp>
+#include "RunwayTakeoffRotation.hpp"
 
 namespace runwaytakeoff
 {
@@ -81,9 +82,12 @@ public:
 	 * @param calibrated_airspeed Vehicle calibrated airspeed [m/s]
 	 * @param vehicle_altitude Vehicle altitude (AGL) [m]
 	 * @param clearance_altitude Altitude (AGL) above which we have cleared all occlusions in the runway path [m]
+	 * @param gps GPS ground velocity, used only when RWTO_ROT_SRC is 1
+	 * @param runway_bearing Takeoff direction in the NED frame [rad]
 	 */
 	void update(const hrt_abstime &time_now, const float takeoff_airspeed, const float calibrated_airspeed,
-		    const float vehicle_altitude, const float clearance_altitude);
+		    const float vehicle_altitude, const float clearance_altitude,
+		    const RunwayTakeoffRotation::GpsVelocity &gps = {}, const float runway_bearing = NAN);
 
 	/**
 	 * @return Current takeoff state
@@ -175,13 +179,19 @@ private:
 	 */
 	hrt_abstime takeoff_time_{0};
 
+	RunwayTakeoffRotation rotation_;
+	int rotation_source_{0};
+
 	DEFINE_PARAMETERS(
 		(ParamBool<px4::params::RWTO_TKOFF>) param_rwto_tkoff_,
 		(ParamFloat<px4::params::RWTO_MAX_THR>) param_rwto_max_thr_,
 		(ParamFloat<px4::params::RWTO_PSP>) param_rwto_psp_,
 		(ParamFloat<px4::params::RWTO_RAMP_TIME>) param_rwto_ramp_time_,
 		(ParamFloat<px4::params::RWTO_ROT_AIRSPD>) param_rwto_rot_airspd_,
-		(ParamFloat<px4::params::RWTO_ROT_TIME>) param_rwto_rot_time_
+		(ParamFloat<px4::params::RWTO_ROT_TIME>) param_rwto_rot_time_,
+		(ParamInt<px4::params::RWTO_ROT_SRC>) param_rwto_rot_src_,
+		(ParamFloat<px4::params::RWTO_ROT_GSPD>) param_rwto_rot_gspd_,
+		(ParamFloat<px4::params::RWTO_GSPD_TIME>) param_rwto_gspd_time_
 	)
 };
 

@@ -408,8 +408,16 @@ FixedWingModeManager::set_control_mode_current(const hrt_abstime &now)
 			} else {
 				_control_mode_current = _local_pos.xy_valid ? FW_POSCTRL_MODE_AUTO_TAKEOFF : FW_POSCTRL_MODE_AUTO_TAKEOFF_NO_NAV;
 
-				if (previous_position_control_mode != FW_POSCTRL_MODE_AUTO_TAKEOFF_NO_NAV
-				    && previous_position_control_mode != FW_POSCTRL_MODE_AUTO_TAKEOFF && !_landed) {
+				// VTOL reports airborne as soon as it is armed in FW mode. Preserve only a
+				// validated, unused ground start; all other airborne entries retain the bypass.
+				const bool ground_runway_start = _control_mode.flag_armed && _vtol_runway_start.consume();
+
+				const bool entering_takeoff = (previous_position_control_mode != FW_POSCTRL_MODE_AUTO_TAKEOFF_NO_NAV
+							       && previous_position_control_mode != FW_POSCTRL_MODE_AUTO_TAKEOFF)
+							      || (_vehicle_status.is_vtol && _runway_takeoff.runwayTakeoffEnabled()
+								  && _control_mode.flag_armed && !_runway_takeoff.isInitialized());
+
+				if (entering_takeoff && !_landed && !ground_runway_start) {
 					// skip takeoff detection when switching from any other mode, auto or manual,
 					// while already in air.
 					// TODO: find a better place for / way of doing this
@@ -1090,8 +1098,6 @@ FixedWingModeManager::control_auto_takeoff(const hrt_abstime &now, const float c
 			_runway_takeoff.forceSetFlyState();
 		}
 
-		_runway_takeoff.update(now, takeoff_airspeed, _airspeed_eas, _current_altitude - _takeoff_ground_alt,
-				       clearance_altitude_amsl - _takeoff_ground_alt);
 
 		const Vector2f start_pos_local = _global_local_proj_ref.project(_takeoff_init_position(0), _takeoff_init_position(1));
 		const Vector2f takeoff_waypoint_local = _global_local_proj_ref.project(pos_sp_curr.lat, pos_sp_curr.lon);
@@ -1107,6 +1113,9 @@ FixedWingModeManager::control_auto_takeoff(const hrt_abstime &now, const float c
 				takeoff_bearing = atan2f(takeoff_bearing_vector(1), takeoff_bearing_vector(0));
 			}
 		}
+
+		_runway_takeoff.update(now, takeoff_airspeed, _airspeed_eas, _current_altitude - _takeoff_ground_alt,
+				       clearance_altitude_amsl - _takeoff_ground_alt, runway_gps_velocity(), takeoff_bearing);
 
 		const DirectionalGuidanceOutput sp = navigateLine(start_pos_local, takeoff_bearing, local_2D_position, ground_speed,
 						     _wind_vel);
@@ -1286,6 +1295,7 @@ FixedWingModeManager::control_auto_takeoff_no_nav(const hrt_abstime &now, const 
 
 		const float clearance_altitude_amsl = _current_altitude + 20.f; // hard code it to 20m above takeoff point
 
+		// GPS rotation requires valid horizontal navigation. With no navigation, GPS input stays invalid.
 		_runway_takeoff.update(now, takeoff_airspeed, _airspeed_eas, _current_altitude - _takeoff_ground_alt,
 				       clearance_altitude_amsl - _takeoff_ground_alt);
 
@@ -1961,6 +1971,9 @@ FixedWingModeManager::Run()
 					   && (_vehicle_status.nav_state <= vehicle_status_s::NAVIGATION_STATE_EXTERNAL8);
 
 	if (is_external_nav_state) {
+		_vtol_runway_start.reset();
+		reset_takeoff_state();
+		_control_mode_current = FW_POSCTRL_MODE_OTHER;
 		// this will cause the configuration handler to publish immediately the next time an internal flight
 		// mode is active
 		_ctrl_configuration_handler.resetLastPublishTime();
@@ -2115,8 +2128,24 @@ FixedWingModeManager::Run()
 
 			if (_vehicle_land_detected_sub.update(&vehicle_land_detected)) {
 				_landed = vehicle_land_detected.landed;
+				_land_detected_timestamp = vehicle_land_detected.timestamp;
 			}
 		}
+
+
+		const VtolRunwayStart::Sample runway_start_sample{
+			_local_pos.timestamp, _local_pos.x, _local_pos.y, _local_pos.z,
+			_local_pos.vx, _local_pos.vy, _local_pos.vz,
+			_local_pos.xy_reset_counter, _local_pos.z_reset_counter,
+			_local_pos.vxy_reset_counter, _local_pos.vz_reset_counter,
+			_local_pos.xy_valid && _local_pos.z_valid && _local_pos.v_xy_valid && _local_pos.v_z_valid
+		};
+		_vtol_runway_start.update(hrt_absolute_time(),
+					 _vehicle_status.is_vtol && _runway_takeoff.runwayTakeoffEnabled(),
+					 _control_mode.flag_armed,
+					 _vehicle_status.vehicle_type == vehicle_status_s::VEHICLE_TYPE_FIXED_WING,
+					 _vehicle_status.in_transition_mode, _control_mode.flag_control_offboard_enabled,
+					 _land_detected_timestamp, _landed, runway_start_sample);
 
 		if (!_vehicle_status.in_transition_mode) {
 			// reset position of backtransition start if not in transition
@@ -2264,6 +2293,26 @@ FixedWingModeManager::Run()
 
 		perf_end(_loop_perf);
 	}
+}
+
+RunwayTakeoffRotation::GpsVelocity
+FixedWingModeManager::runway_gps_velocity()
+{
+	sensor_gps_s gps{};
+	RunwayTakeoffRotation::GpsVelocity velocity{};
+
+	if (_gps_sub.copy(&gps)) {
+		velocity.timestamp = gps.timestamp_sample > 0 ? gps.timestamp_sample : gps.timestamp;
+		velocity.north = gps.vel_n_m_s;
+		velocity.east = gps.vel_e_m_s;
+		velocity.speed_accuracy = gps.s_variance_m_s;
+		velocity.fix_type = gps.fix_type;
+		velocity.valid = gps.vel_ned_valid && _local_pos.xy_valid && _local_pos.v_xy_valid
+				 && gps.jamming_state <= sensor_gps_s::JAMMING_STATE_MITIGATED
+				 && gps.spoofing_state < sensor_gps_s::SPOOFING_STATE_MITIGATED;
+	}
+
+	return velocity;
 }
 
 void

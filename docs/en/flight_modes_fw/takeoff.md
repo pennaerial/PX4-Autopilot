@@ -142,6 +142,47 @@ Runway takeoff is affected by the following parameters:
 | <a id="FW_WING_SPAN"></a>[FW_WING_SPAN](../advanced_config/parameter_reference.md#FW_WING_SPAN)          | The wingspan of the vehicle. Used to prevent wingstrikes.                                                                    |
 | <a id="FW_WING_HEIGHT"></a>[FW_WING_HEIGHT](../advanced_config/parameter_reference.md#FW_WING_HEIGHT)    | The height of the wings above ground (ground clearance). Used to prevent wingstrikes.                                        |
 
+### GPS Groundspeed Rotation (Custom Firmware)
+
+This opt-in extension uses GPS ground velocity along the takeoff direction to trigger runway rotation without a wind estimate or airspeed sensor.
+It applies only to fixed-wing runway takeoff; it does not select fixed-wing mode on a VTOL or change mission takeoff-item semantics.
+The default `RWTO_ROT_SRC = 0` retains the calibrated-airspeed trigger.
+
+| Parameter | Setting | Meaning |
+| --- | --- | --- |
+| `RWTO_ROT_SRC` | `1` to enable | Select GPS groundspeed for rotation only. |
+| `RWTO_ROT_GSPD` | Explicit positive speed in m/s | Forward ground-speed threshold; default `-1` inhibits GPS rotation. |
+| `RWTO_GSPD_TIME` | Default `0.5` s | Continuous time above the threshold after the throttle ramp; `0` accepts the first qualifying sample. |
+
+Select a groundspeed threshold from demonstrated aircraft performance at the operating weight, air density and allowed wind conditions.
+It is not calibrated airspeed: no wind or density correction is applied, and tailwind increases the required groundspeed.
+The threshold is independent of `FW_TKO_AIRSPD` and `RWTO_ROT_AIRSPD`; their values are not copied or used as a fallback.
+These rotation settings are captured when a takeoff attempt starts.
+
+The input is `vehicle_gps_position` NED velocity, projected along the same takeoff bearing used for runway guidance.
+For a mission this is the bearing from takeoff start to the takeoff waypoint; otherwise it is the initial heading.
+Sideways or backwards velocity alone cannot trigger rotation.
+GPS must report a 3D or differential fix (types 3 through 6), valid finite velocity, and finite speed accuracy between 0 and 1 m/s.
+Data must be no more than 0.5 s old and horizontal navigation must be valid.
+A reported jamming warning (`JAMMING_STATE_MITIGATED`) does not interrupt speed confirmation while the other GPS checks pass. Detected jamming, unknown higher jamming-state values, and reported spoofing mitigation/detection inhibit the trigger and reset confirmation.
+
+Only new GPS samples advance the confirmation timer.
+Speed at or below the threshold, invalid input, out-of-order data or sample gaps exceeding 0.5 s restart confirmation.
+Samples from before completion of the throttle ramp do not count.
+After confirmation, the existing `RWTO_ROT_TIME` pitch ramp and climbout controls take over.
+
+There is no additional abort, timeout, distance limit or throttle cut.
+If the threshold is unset, GPS is invalid or the speed is not reached, rotation remains inhibited and existing runway throttle behaviour continues.
+Existing PX4 failsafes remain in force.
+This extension does not publish a substitute airspeed or change TECS, wind estimation, attitude control or control allocation.
+Without valid airspeed, TECS uses its existing no-airspeed behaviour, so aircraft-specific climbout tuning still requires validation.
+
+This extension is maintained in the Penn AiR PX4 fork.
+For the Pixhawk 6C Mini, the board build target is `px4_fmu-v6c_default` (see [board build instructions](../flight_controller/pixhawk6c_mini.md#building-firmware)).
+Run `make tests TESTFILTER=RunwayTakeoffRotation` in a configured PX4 Linux build environment for the rotation-decision unit tests.
+Before flight use, build the board firmware and verify the full takeoff sequence in simulation, including GPS loss, unavailable wind/airspeed, and mode changes.
+Unit tests of the rotation decision do not establish that the complete aircraft takeoff works.
+
 ## See Also
 
 - [Takeoff Mode (MC)](../flight_modes_mc/takeoff.md)
