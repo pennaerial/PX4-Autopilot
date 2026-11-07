@@ -57,6 +57,8 @@
 #include <nuttx/config.h>
 #include <nuttx/board.h>
 #include <nuttx/spi/spi.h>
+#include <nuttx/mtd/mtd.h>
+#include <nuttx/fs/fs.h>
 #include <nuttx/analog/adc.h>
 #include <nuttx/mm/gran.h>
 #include <chip.h>
@@ -172,6 +174,53 @@ stm32_boardinitialize(void)
 
 }
 
+static void board_flash_initialize(void)
+{
+	/* V1.1 and V1.5 use W25Q128 SPI NOR. V1.3 NAND is not supported here. */
+	struct spi_dev_s *spi_dev = stm32_spibus_initialize(1);
+
+	if (!spi_dev) {
+		syslog(LOG_ERR, "[boot] FAILED to initialize flash SPI1\n");
+		led_on(LED_BLUE);
+		return;
+	}
+
+	struct mtd_dev_s *flash = w25_initialize(spi_dev);
+
+	if (!flash) {
+		syslog(LOG_ERR, "[boot] W25 NOR flash not detected\n");
+		led_on(LED_BLUE);
+		return;
+	}
+
+	struct mtd_geometry_s geometry = {0};
+	int ret = MTD_IOCTL(flash, MTDIOC_GEOMETRY, (unsigned long)&geometry);
+
+	if (ret != OK) {
+		syslog(LOG_ERR, "[boot] FAILED to read flash geometry: %d\n", ret);
+		led_on(LED_BLUE);
+		return;
+	}
+
+	if (geometry.blocksize != 256 || geometry.erasesize != 4096 || geometry.neraseblocks != 4096) {
+		syslog(LOG_ERR, "[boot] Unexpected flash geometry: %lu/%lu/%lu\n",
+		       (unsigned long)geometry.blocksize, (unsigned long)geometry.erasesize,
+		       (unsigned long)geometry.neraseblocks);
+		led_on(LED_BLUE);
+		return;
+	}
+
+	ret = register_mtddriver("/dev/kakute_flash", flash, 0600, NULL);
+
+	if (ret != OK) {
+		syslog(LOG_ERR, "[boot] FAILED to register flash: %d\n", ret);
+		led_on(LED_BLUE);
+		return;
+	}
+
+	syslog(LOG_INFO, "[boot] W25 NOR flash: 16 MiB at /dev/kakute_flash\n");
+}
+
 /****************************************************************************
  * Name: board_app_initialize
  *
@@ -231,16 +280,7 @@ __EXPORT int board_app_initialize(uintptr_t arg)
 		led_on(LED_RED);
 	}
 
-	// MARK: this will *not* work as the minis have a W25N NAND flash chip
-	/* Get the SPI port for the microSD slot */
-	struct spi_dev_s *spi_dev = stm32_spibus_initialize(CONFIG_NSH_MMCSDSPIPORTNO);
-
-	if (!spi_dev) {
-		syslog(LOG_ERR, "[boot] FAILED to initialize SPI port %d\n", CONFIG_NSH_MMCSDSPIPORTNO);
-		led_on(LED_BLUE);
-	}
-
-	up_udelay(20);
+	board_flash_initialize();
 
 #if defined(FLASH_BASED_PARAMS)
 	static sector_descriptor_t params_sector_map[] = {

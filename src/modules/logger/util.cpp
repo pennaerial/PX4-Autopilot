@@ -232,8 +232,13 @@ int check_free_space(const char *log_root_dir, int32_t max_log_dirs_to_keep, orb
 	} while (true);
 
 
-	/* use a threshold of 50 MiB: if below, do not start logging */
-	if (statfs_buf.f_bavail < (px4_statfs_buf_f_bavail_t)(50 * 1024 * 1024 / statfs_buf.f_bsize)) {
+	// Require 50 MiB free, or 10% of total capacity on smaller filesystems.
+	const uint64_t total_bytes = (uint64_t)statfs_buf.f_blocks * statfs_buf.f_bsize;
+	const uint64_t capacity_reserve_bytes = total_bytes / 10;
+	const uint64_t min_start_bytes = capacity_reserve_bytes < 50ULL * 1024ULL * 1024ULL
+					 ? capacity_reserve_bytes : 50ULL * 1024ULL * 1024ULL;
+
+	if ((uint64_t)statfs_buf.f_bavail * statfs_buf.f_bsize < min_start_bytes) {
 		mavlink_log_critical(&mavlink_log_pub,
 				     "[logger] Not logging; SD almost full: %u MiB\t",
 				     (unsigned int)(statfs_buf.f_bavail * statfs_buf.f_bsize / 1024U / 1024U));
